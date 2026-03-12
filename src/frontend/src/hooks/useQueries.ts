@@ -173,3 +173,43 @@ export function useSeedData() {
     },
   });
 }
+
+export function useGetApiToken() {
+  const { actor, isFetching } = useActor();
+  return useQuery({
+    queryKey: ["apiToken"],
+    queryFn: async (): Promise<string> => {
+      if (!actor) return "";
+      return (await (actor as any).getApiToken()) as string;
+    },
+    enabled: !!actor && !isFetching,
+  });
+}
+
+export function useGenerateApiToken() {
+  const { actor } = useActor();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (): Promise<string> => {
+      if (!actor) throw new Error("No actor");
+      return (await (actor as any).generateApiToken()) as string;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["apiToken"] });
+    },
+  });
+}
+
+export function useRevokeAndRegenerateToken() {
+  const { actor } = useActor();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (): Promise<string> => {
+      if (!actor) throw new Error("No actor");
+      return (await (actor as any).revokeAndRegenerateToken()) as string;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["apiToken"] });
+    },
+  });
+}

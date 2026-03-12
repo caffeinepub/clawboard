@@ -1,17 +1,24 @@
 import {
+  AlertTriangle,
   Eye,
   EyeOff,
+  Key,
+  Loader2,
   Lock,
+  RefreshCw,
   ShieldAlert,
   ShieldCheck,
   ShieldX,
 } from "lucide-react";
 import { motion } from "motion/react";
 import { useMemo, useState } from "react";
+import { toast } from "sonner";
 import {
   useGetAllAgents,
   useGetAllConfigEntries,
   useGetAllSecurityEvents,
+  useGetApiToken,
+  useRevokeAndRegenerateToken,
 } from "../hooks/useQueries";
 import {
   SectionEmpty,
@@ -65,6 +72,132 @@ const SEV_CONFIG: Record<
 };
 
 const SEV_ORDER: Record<string, number> = { high: 0, medium: 1, low: 2 };
+
+// ── API Token Panel ───────────────────────────────────────────────────────────
+function ApiTokenPanel() {
+  const { data: token, isLoading } = useGetApiToken();
+  const revokeMutation = useRevokeAndRegenerateToken();
+  const [revealed, setRevealed] = useState(false);
+  const [confirmRegen, setConfirmRegen] = useState(false);
+
+  const maskedToken = token
+    ? `${token.slice(0, 8)}${".".repeat(24)}${token.slice(-4)}`
+    : "";
+
+  const handleRegenerate = async () => {
+    if (!confirmRegen) {
+      setConfirmRegen(true);
+      return;
+    }
+    try {
+      await revokeMutation.mutateAsync();
+      setConfirmRegen(false);
+      setRevealed(false);
+      toast.success("Token regenerated", {
+        description:
+          "Update your skill files with the new token. Agents will stop reporting until updated.",
+      });
+    } catch {
+      toast.error("Failed to regenerate token", {
+        description: "Please try again.",
+      });
+    }
+  };
+
+  return (
+    <div className="space-y-4">
+      {/* Warning */}
+      <div className="flex items-start gap-3 px-4 py-3 rounded-sm border border-terminal-amber/30 bg-terminal-amber/5">
+        <AlertTriangle className="w-3.5 h-3.5 text-terminal-amber shrink-0 mt-0.5" />
+        <p className="text-[11px] font-mono text-terminal-amber/80 leading-relaxed">
+          Regenerating invalidates the current token.{" "}
+          <span className="text-terminal-amber">
+            All connected agents will stop reporting
+          </span>{" "}
+          until they receive the new token.
+        </p>
+      </div>
+
+      {/* Token display */}
+      <div className="flex items-center gap-3">
+        <div className="flex-1 flex items-center gap-2 px-3 py-2.5 rounded-sm border border-border/50 bg-muted/30 overflow-hidden">
+          <Key className="w-3.5 h-3.5 text-muted-foreground/40 shrink-0" />
+          {isLoading ? (
+            <span
+              data-ocid="security.token.loading_state"
+              className="text-xs font-mono text-muted-foreground/30 flex items-center gap-2"
+            >
+              <Loader2 className="w-3 h-3 animate-spin" />
+              Loading...
+            </span>
+          ) : (
+            <code
+              data-ocid="security.token.panel"
+              className="text-xs font-mono text-primary/80 tracking-wider flex-1 overflow-hidden text-ellipsis whitespace-nowrap"
+            >
+              {revealed ? token : maskedToken}
+            </code>
+          )}
+        </div>
+        <button
+          type="button"
+          data-ocid="security.token.toggle"
+          onClick={() => setRevealed((v) => !v)}
+          disabled={isLoading || !token}
+          className="flex items-center gap-1.5 px-3 py-2 rounded-sm border border-border/50 bg-muted/20 text-xs font-mono text-muted-foreground hover:text-foreground hover:border-primary/30 transition-all duration-150 disabled:opacity-40 disabled:cursor-not-allowed"
+        >
+          {revealed ? (
+            <EyeOff className="w-3 h-3" />
+          ) : (
+            <Eye className="w-3 h-3" />
+          )}
+          {revealed ? "Hide" : "Reveal"}
+        </button>
+      </div>
+
+      {/* Regenerate */}
+      <div className="flex items-center gap-3">
+        {confirmRegen && (
+          <motion.div
+            initial={{ opacity: 0, x: -8 }}
+            animate={{ opacity: 1, x: 0 }}
+            className="flex items-center gap-2"
+          >
+            <span className="text-[11px] font-mono text-terminal-amber/80">
+              Are you sure? This cannot be undone.
+            </span>
+            <button
+              type="button"
+              data-ocid="security.token.cancel_button"
+              onClick={() => setConfirmRegen(false)}
+              className="text-[11px] font-mono text-muted-foreground/50 hover:text-foreground underline underline-offset-2 transition-colors"
+            >
+              Cancel
+            </button>
+          </motion.div>
+        )}
+        <button
+          type="button"
+          data-ocid="security.token.delete_button"
+          onClick={handleRegenerate}
+          disabled={revokeMutation.isPending || isLoading}
+          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-sm border text-xs font-mono tracking-wide transition-all duration-150 disabled:opacity-40 disabled:cursor-not-allowed ${
+            confirmRegen
+              ? "border-terminal-red/50 bg-terminal-red/10 text-terminal-red hover:bg-terminal-red/20"
+              : "border-border/50 bg-muted/20 text-muted-foreground hover:text-foreground hover:border-terminal-amber/40"
+          }`}
+        >
+          {revokeMutation.isPending ? (
+            <Loader2 className="w-3 h-3 animate-spin" />
+          ) : (
+            <RefreshCw className="w-3 h-3" />
+          )}
+          {confirmRegen ? "Confirm Regenerate" : "Regenerate Token"}
+        </button>
+      </div>
+    </div>
+  );
+}
 
 // ── Config Panel ──────────────────────────────────────────────────────────────
 function ConfigPanel({
@@ -346,16 +479,18 @@ function SecurityPanel({
 }
 
 // ── Panel heading (shared) ────────────────────────────────────────────────────
-function PanelHeading({ label, sub }: { label: string; sub: string }) {
+function PanelHeading({ label, sub }: { label: string; sub?: string }) {
   return (
     <div className="flex items-center gap-3 mb-4">
       <h2 className="text-xs font-display font-semibold tracking-widest text-foreground/70 uppercase">
         {label}
       </h2>
       <div className="flex-1 h-px bg-border/40" />
-      <span className="text-[10px] text-muted-foreground/30 tracking-widest">
-        {sub}
-      </span>
+      {sub && (
+        <span className="text-[10px] text-muted-foreground/30 tracking-widest">
+          {sub}
+        </span>
+      )}
     </div>
   );
 }
@@ -386,6 +521,19 @@ export function SecuritySection() {
 
   return (
     <div className="space-y-8">
+      {/* API Token Panel — always at the top */}
+      <section data-ocid="security.token.panel">
+        <PanelHeading label="API Token" />
+        <ApiTokenPanel />
+      </section>
+
+      <div className="relative">
+        <div className="h-px bg-border/40" />
+        <span className="absolute left-1/2 -translate-x-1/2 -translate-y-1/2 px-3 bg-background text-[9px] tracking-widest text-muted-foreground/30 uppercase">
+          Config Inspector
+        </span>
+      </div>
+
       <section>
         <PanelHeading
           label="Config Inspector"

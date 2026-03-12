@@ -9,7 +9,10 @@ import {
   Gamepad2,
   Loader2,
   Menu,
+  Moon,
+  Plug,
   Shield,
+  Sun,
   Wrench,
   X,
   Zap,
@@ -20,12 +23,14 @@ import { toast } from "sonner";
 import { ActivitySection } from "./components/ActivitySection";
 import { AgentsSection } from "./components/AgentsSection";
 import { BrainSection } from "./components/BrainSection";
+import { ConnectAgentSection } from "./components/ConnectAgentSection";
 import { ControlsSection } from "./components/ControlsSection";
 import { CreditsSection } from "./components/CreditsSection";
 import { CronSection } from "./components/CronSection";
 import { SecuritySection } from "./components/SecuritySection";
 import { SkillsSection } from "./components/SkillsSection";
 import { useSeedData } from "./hooks/useQueries";
+import { useTheme } from "./hooks/useTheme";
 
 const queryClient = new QueryClient();
 
@@ -37,6 +42,7 @@ type Section =
   | "credits"
   | "activity"
   | "security"
+  | "connect"
   | "controls";
 
 const NAV_ITEMS: {
@@ -88,6 +94,12 @@ const NAV_ITEMS: {
     ocid: "nav.security.link",
   },
   {
+    id: "connect",
+    label: "Connect Agent",
+    icon: <Plug className="w-4 h-4" />,
+    ocid: "nav.connect.link",
+  },
+  {
     id: "controls",
     label: "Controls & Leaderboard",
     icon: <Gamepad2 className="w-4 h-4" />,
@@ -103,6 +115,7 @@ const SECTION_LABELS: Record<Section, string> = {
   credits: "Credits & Providers",
   activity: "Activity Feed",
   security: "Security & Config",
+  connect: "Connect Agent",
   controls: "Controls & Leaderboard",
 };
 
@@ -110,6 +123,7 @@ function AppShell() {
   const [active, setActive] = useState<Section>("agents");
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const seedMutation = useSeedData();
+  const { theme, toggleTheme } = useTheme();
 
   const handleSeed = async () => {
     try {
@@ -186,20 +200,52 @@ function AppShell() {
               </h1>
             </div>
           </div>
-          <button
-            type="button"
-            data-ocid="header.seed_button"
-            onClick={handleSeed}
-            disabled={seedMutation.isPending}
-            className="flex items-center gap-2 px-3 py-1.5 rounded-sm border border-accent/30 bg-accent/5 text-accent text-xs font-mono tracking-wider hover:bg-accent/15 hover:border-accent/60 transition-all duration-150 disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            {seedMutation.isPending ? (
-              <Loader2 className="w-3 h-3 animate-spin" />
-            ) : (
-              <Zap className="w-3 h-3" />
-            )}
-            SEED DATA
-          </button>
+          <div className="flex items-center gap-2">
+            {/* Theme toggle */}
+            <button
+              type="button"
+              data-ocid="header.theme_toggle"
+              onClick={toggleTheme}
+              title={
+                theme === "dark"
+                  ? "Switch to light mode"
+                  : "Switch to dark mode"
+              }
+              className="flex items-center gap-2 px-3 py-1.5 rounded-sm border border-border/50 bg-muted/30 text-muted-foreground text-xs font-mono tracking-wider hover:bg-muted/60 hover:text-foreground hover:border-border transition-all duration-150"
+            >
+              <motion.span
+                key={theme}
+                initial={{ rotate: -30, opacity: 0 }}
+                animate={{ rotate: 0, opacity: 1 }}
+                transition={{ duration: 0.2 }}
+              >
+                {theme === "dark" ? (
+                  <Sun className="w-3 h-3" />
+                ) : (
+                  <Moon className="w-3 h-3" />
+                )}
+              </motion.span>
+              <span className="hidden sm:inline">
+                {theme === "dark" ? "LIGHT" : "DARK"}
+              </span>
+            </button>
+
+            {/* Seed data */}
+            <button
+              type="button"
+              data-ocid="header.seed_button"
+              onClick={handleSeed}
+              disabled={seedMutation.isPending}
+              className="flex items-center gap-2 px-3 py-1.5 rounded-sm border border-accent/30 bg-accent/5 text-accent text-xs font-mono tracking-wider hover:bg-accent/15 hover:border-accent/60 transition-all duration-150 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {seedMutation.isPending ? (
+                <Loader2 className="w-3 h-3 animate-spin" />
+              ) : (
+                <Zap className="w-3 h-3" />
+              )}
+              SEED DATA
+            </button>
+          </div>
         </header>
 
         <main className="flex-1 overflow-y-auto p-4 md:p-6">
@@ -218,6 +264,7 @@ function AppShell() {
               {active === "credits" && <CreditsSection />}
               {active === "activity" && <ActivitySection />}
               {active === "security" && <SecuritySection />}
+              {active === "connect" && <ConnectAgentSection />}
               {active === "controls" && <ControlsSection />}
             </motion.div>
           </AnimatePresence>
@@ -270,7 +317,7 @@ function SidebarContent({
             <Bot className="w-4 h-4 text-primary" />
             <span className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-primary animate-pulse-slow" />
           </div>
-          <span className="font-display font-bold text-base text-foreground tracking-widest text-glow-green">
+          <span className="font-display font-bold text-base text-foreground tracking-widest text-glow-blue">
             ClawBoard
           </span>
         </div>

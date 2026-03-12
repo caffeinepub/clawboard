@@ -1,10 +1,8 @@
 import Map "mo:core/Map";
-import Array "mo:core/Array";
-import Order "mo:core/Order";
 import Text "mo:core/Text";
 import Int "mo:core/Int";
+import Nat "mo:core/Nat";
 import Time "mo:core/Time";
-import Iter "mo:core/Iter";
 import Runtime "mo:core/Runtime";
 
 actor {
@@ -44,7 +42,6 @@ actor {
     sentBy : Text;
     agentTargets : [Text];
   };
-  type CronJobStatus = { #running; #idle; #failed };
 
   type Agent = {
     id : Text;
@@ -91,215 +88,303 @@ actor {
     rank : Nat;
   };
 
-  // Persistent Data Structures
+  type AgentPing = {
+    apiToken : Text;
+    agentId : Text;
+    agentName : Text;
+    status : Text;
+    modelName : Text;
+    logs : [Text];
+    errors : [Text];
+    identityMd : Text;
+    soulMd : Text;
+    memoryMd : Text;
+    skillsList : [Text];
+  };
+
+  // Persistent Data
+  var apiToken : Text = "";
+  var tokenCounter : Nat = 0;
+
   let agentMap = Map.empty<Text, Agent>();
-
   let skillMap = Map.empty<Text, Skill>();
-
   let cronJobMap = Map.empty<Text, CronJob>();
-
   let creditMap = Map.empty<Text, Credit>();
-
   let providerMap = Map.empty<Text, Provider>();
-
   let activityLogMap = Map.empty<Text, ActivityLog>();
-
   let brainEntryMap = Map.empty<Text, BrainEntry>();
-
   let configEntryMap = Map.empty<Text, ConfigEntry>();
-
   let securityEventMap = Map.empty<Text, SecurityEvent>();
-
   let broadcastMessageMap = Map.empty<Text, BroadcastMessage>();
-
   let leaderboardMap = Map.empty<Text, LeaderboardEntry>();
 
-  // Modules with comparison functions
-  module Agent {
-    public func compare(a1 : Agent, a2 : Agent) : Order.Order {
-      Text.compare(a1.name, a2.name);
-    };
+  // Token helpers
+  func makeToken(seed : Nat) : Text {
+    "cb_" # seed.toText() # "_" # (Time.now() % 999999999).toText();
   };
 
-  module Skill {
-    public func compare(s1 : Skill, s2 : Skill) : Order.Order {
-      Text.compare(s1.name, s2.name);
+  // API Token Management
+  public shared func generateApiToken() : async Text {
+    if (apiToken == "") {
+      tokenCounter += 1;
+      apiToken := makeToken(tokenCounter);
     };
+    apiToken;
   };
 
-  module CronJob {
-    public func compare(cj1 : CronJob, cj2 : CronJob) : Order.Order {
-      Text.compare(cj1.name, cj2.name);
-    };
+  public query func getApiToken() : async Text {
+    apiToken;
   };
 
-  module Credit {
-    public func compare(c1 : Credit, c2 : Credit) : Order.Order {
-      switch (Nat.compare(c1.balance, c2.balance)) {
-        case (#equal) { Text.compare(c1.id, c2.id) };
-        case (order) { order };
+  public shared func revokeAndRegenerateToken() : async Text {
+    tokenCounter += 1;
+    apiToken := makeToken(tokenCounter);
+    apiToken;
+  };
+
+  // Agent Ping Ingestion
+  public shared func receiveAgentPing(ping : AgentPing) : async Text {
+    if (ping.apiToken != apiToken or apiToken == "") {
+      Runtime.trap("Invalid API token");
+    };
+
+    let statusVal : Status = switch (ping.status) {
+      case "active" { #active };
+      case "idle" { #idle };
+      case "error" { #error };
+      case _ { #offline };
+    };
+
+    let existing = agentMap.get(ping.agentId);
+    let taskCount : Nat = switch (existing) {
+      case (?a) { a.taskCount + 1 };
+      case null { 1 };
+    };
+
+    let agent : Agent = {
+      id = ping.agentId;
+      name = if (ping.agentName == "") { "Agent-" # ping.agentId } else { ping.agentName };
+      status = statusVal;
+      modelName = ping.modelName;
+      uptimePercentage = 99;
+      lastActive = Time.now();
+      taskCount = taskCount;
+      description = "Connected via OpenClaw skill reporter.";
+    };
+    agentMap.add(ping.agentId, agent);
+
+    let now = Time.now();
+    let logId = ping.agentId # "_ping_" # now.toText();
+    let log : ActivityLog = {
+      id = logId;
+      agentId = ping.agentId;
+      timestamp = now;
+      action = "PING";
+      details = "Agent checked in. Model: " # ping.modelName # ". Status: " # ping.status;
+      level = #info;
+    };
+    activityLogMap.add(logId, log);
+
+    if (ping.identityMd != "") {
+      let entry : BrainEntry = {
+        id = ping.agentId # "_identity";
+        agentId = ping.agentId;
+        key = "IDENTITY.md";
+        value = ping.identityMd;
+        category = "identity";
       };
+      brainEntryMap.add(entry.id, entry);
     };
-  };
-
-  module Provider {
-    public func compare(p1 : Provider, p2 : Provider) : Order.Order {
-      Text.compare(p1.name, p2.name);
-    };
-  };
-
-  module ActivityLog {
-    public func compare(al1 : ActivityLog, al2 : ActivityLog) : Order.Order {
-      Text.compare(al1.action, al2.action);
-    };
-  };
-
-  module BrainEntry {
-    public func compare(be1 : BrainEntry, be2 : BrainEntry) : Order.Order {
-      Text.compare(be1.key, be2.key);
-    };
-  };
-
-  module ConfigEntry {
-    public func compare(ce1 : ConfigEntry, ce2 : ConfigEntry) : Order.Order {
-      Text.compare(ce1.key, ce2.key);
-    };
-  };
-
-  module SecurityEvent {
-    public func compare(se1 : SecurityEvent, se2 : SecurityEvent) : Order.Order {
-      Text.compare(se1.eventType, se2.eventType);
-    };
-  };
-
-  module BroadcastMessage {
-    public func compare(bm1 : BroadcastMessage, bm2 : BroadcastMessage) : Order.Order {
-      switch (Int.compare(bm1.timestamp, bm2.timestamp)) {
-        case (#equal) { Text.compare(bm1.id, bm2.id) };
-        case (order) { order };
+    if (ping.soulMd != "") {
+      let entry : BrainEntry = {
+        id = ping.agentId # "_soul";
+        agentId = ping.agentId;
+        key = "SOUL.md";
+        value = ping.soulMd;
+        category = "soul";
       };
+      brainEntryMap.add(entry.id, entry);
     };
-  };
-
-  module LeaderboardEntry {
-    public func compare(le1 : LeaderboardEntry, le2 : LeaderboardEntry) : Order.Order {
-      switch (Nat.compare(le1.rank, le2.rank)) {
-        case (#equal) { Text.compare(le1.agentName, le2.agentName) };
-        case (order) { order };
+    if (ping.memoryMd != "") {
+      let entry : BrainEntry = {
+        id = ping.agentId # "_memory";
+        agentId = ping.agentId;
+        key = "MEMORY.md";
+        value = ping.memoryMd;
+        category = "memory";
       };
+      brainEntryMap.add(entry.id, entry);
     };
+
+    for (errMsg in ping.errors.values()) {
+      let errId = ping.agentId # "_err_" # errMsg;
+      let errLog : ActivityLog = {
+        id = errId;
+        agentId = ping.agentId;
+        timestamp = now;
+        action = "ERROR";
+        details = errMsg;
+        level = #error;
+      };
+      activityLogMap.add(errId, errLog);
+    };
+
+    "ok";
   };
 
-  // CRUD Operations
   // Agents
-  public shared ({ caller }) func addAgent(agent : Agent) : async () {
+  public shared func addAgent(agent : Agent) : async () {
     agentMap.add(agent.id, agent);
   };
 
-  public query ({ caller }) func getAgent(id : Text) : async Agent {
+  public query func getAgent(id : Text) : async Agent {
     switch (agentMap.get(id)) {
       case (null) { Runtime.trap("Agent not found") };
       case (?agent) { agent };
     };
   };
 
-  public query ({ caller }) func getAllAgents() : async [Agent] {
-    agentMap.values().toArray().sort();
+  public query func getAllAgents() : async [Agent] {
+    agentMap.values().toArray();
+  };
+
+  public shared func updateAgent(agent : Agent) : async () {
+    agentMap.add(agent.id, agent);
+  };
+
+  public shared func deleteAgent(id : Text) : async () {
+    ignore agentMap.remove(id);
   };
 
   // Skills
-  public shared ({ caller }) func addSkill(skill : Skill) : async () {
+  public shared func addSkill(skill : Skill) : async () {
     skillMap.add(skill.id, skill);
   };
 
-  public query ({ caller }) func getAllSkills() : async [Skill] {
+  public shared func updateSkill(skill : Skill) : async () {
+    skillMap.add(skill.id, skill);
+  };
+
+  public shared func deleteSkill(id : Text) : async () {
+    ignore skillMap.remove(id);
+  };
+
+  public query func getAllSkills() : async [Skill] {
     skillMap.values().toArray();
   };
 
   // CronJobs
-  public shared ({ caller }) func addCronJob(cronJob : CronJob) : async () {
+  public shared func addCronJob(cronJob : CronJob) : async () {
     cronJobMap.add(cronJob.id, cronJob);
   };
 
-  public query ({ caller }) func getAllCronJobs() : async [CronJob] {
+  public shared func updateCronJob(cronJob : CronJob) : async () {
+    cronJobMap.add(cronJob.id, cronJob);
+  };
+
+  public shared func deleteCronJob(id : Text) : async () {
+    ignore cronJobMap.remove(id);
+  };
+
+  public query func getAllCronJobs() : async [CronJob] {
     cronJobMap.values().toArray();
   };
 
   // Credits
-  public shared ({ caller }) func addCredit(credit : Credit) : async () {
+  public shared func addCredit(credit : Credit) : async () {
     creditMap.add(credit.id, credit);
   };
 
-  public query ({ caller }) func getAllCredits() : async [Credit] {
+  public shared func updateCredit(credit : Credit) : async () {
+    creditMap.add(credit.id, credit);
+  };
+
+  public query func getAllCredits() : async [Credit] {
     creditMap.values().toArray();
   };
 
   // Providers
-  public shared ({ caller }) func addProvider(provider : Provider) : async () {
+  public shared func addProvider(provider : Provider) : async () {
     providerMap.add(provider.id, provider);
   };
 
-  public query ({ caller }) func getAllProviders() : async [Provider] {
+  public shared func updateProvider(provider : Provider) : async () {
+    providerMap.add(provider.id, provider);
+  };
+
+  public query func getAllProviders() : async [Provider] {
     providerMap.values().toArray();
   };
 
   // ActivityLogs
-  public shared ({ caller }) func addActivityLog(log : ActivityLog) : async () {
+  public shared func addActivityLog(log : ActivityLog) : async () {
     activityLogMap.add(log.id, log);
   };
 
-  public query ({ caller }) func getAllActivityLogs() : async [ActivityLog] {
+  public query func getAllActivityLogs() : async [ActivityLog] {
     activityLogMap.values().toArray();
   };
 
   // BrainEntries
-  public shared ({ caller }) func addBrainEntry(entry : BrainEntry) : async () {
+  public shared func addBrainEntry(entry : BrainEntry) : async () {
     brainEntryMap.add(entry.id, entry);
   };
 
-  public query ({ caller }) func getAllBrainEntries() : async [BrainEntry] {
+  public query func getAllBrainEntries() : async [BrainEntry] {
     brainEntryMap.values().toArray();
   };
 
   // ConfigEntries
-  public shared ({ caller }) func addConfigEntry(entry : ConfigEntry) : async () {
+  public shared func addConfigEntry(entry : ConfigEntry) : async () {
     configEntryMap.add(entry.id, entry);
   };
 
-  public query ({ caller }) func getAllConfigEntries() : async [ConfigEntry] {
+  public shared func updateConfigEntry(entry : ConfigEntry) : async () {
+    configEntryMap.add(entry.id, entry);
+  };
+
+  public shared func deleteConfigEntry(id : Text) : async () {
+    ignore configEntryMap.remove(id);
+  };
+
+  public query func getAllConfigEntries() : async [ConfigEntry] {
     configEntryMap.values().toArray();
   };
 
   // SecurityEvents
-  public shared ({ caller }) func addSecurityEvent(event : SecurityEvent) : async () {
+  public shared func addSecurityEvent(event : SecurityEvent) : async () {
     securityEventMap.add(event.id, event);
   };
 
-  public query ({ caller }) func getAllSecurityEvents() : async [SecurityEvent] {
+  public query func getAllSecurityEvents() : async [SecurityEvent] {
     securityEventMap.values().toArray();
   };
 
   // BroadcastMessages
-  public shared ({ caller }) func addBroadcastMessage(message : BroadcastMessage) : async () {
+  public shared func addBroadcastMessage(message : BroadcastMessage) : async () {
     broadcastMessageMap.add(message.id, message);
   };
 
-  public query ({ caller }) func getAllBroadcastMessages() : async [BroadcastMessage] {
+  public query func getAllBroadcastMessages() : async [BroadcastMessage] {
     broadcastMessageMap.values().toArray();
   };
 
   // Leaderboard
-  public shared ({ caller }) func addLeaderboardEntry(entry : LeaderboardEntry) : async () {
+  public shared func addLeaderboardEntry(entry : LeaderboardEntry) : async () {
     leaderboardMap.add(entry.agentId, entry);
   };
 
-  public query ({ caller }) func getAllLeaderboardEntries() : async [LeaderboardEntry] {
+  public query func getAllLeaderboardEntries() : async [LeaderboardEntry] {
     leaderboardMap.values().toArray();
   };
 
   // Seed Sample Data
-  public shared ({ caller }) func seedData() : async () {
-    // Agents
+  public shared func seedData() : async () {
+    if (apiToken == "") {
+      tokenCounter += 1;
+      apiToken := makeToken(tokenCounter);
+    };
+
     let agents : [Agent] = [
       {
         id = "agent1";
@@ -322,12 +407,10 @@ actor {
         description = "Manages data processing tasks.";
       },
     ];
-
     for (agent in agents.values()) {
       agentMap.add(agent.id, agent);
     };
 
-    // Skills
     let skill : Skill = {
       id = "skill1";
       agentId = "agent1";
@@ -338,7 +421,6 @@ actor {
     };
     skillMap.add(skill.id, skill);
 
-    // CronJobs
     let cronJob : CronJob = {
       id = "cronJob1";
       agentId = "agent1";
@@ -350,6 +432,61 @@ actor {
     };
     cronJobMap.add(cronJob.id, cronJob);
 
-    // Continue seeding remaining data as needed...
+    let credit : Credit = {
+      id = "credit1";
+      agentId = "agent1";
+      balance = 5000;
+      totalUsed = 2500;
+      costAlerts = [(1000, true), (5000, false)];
+    };
+    creditMap.add(credit.id, credit);
+
+    let provider : Provider = {
+      id = "provider1";
+      name = "OpenAI";
+      status = #healthy;
+      latencyMs = 120;
+      uptimePercent = 99;
+      model = "GPT-4";
+    };
+    providerMap.add(provider.id, provider);
+
+    let log : ActivityLog = {
+      id = "log1";
+      agentId = "agent1";
+      timestamp = Time.now();
+      action = "TASK_COMPLETE";
+      details = "Processed 50 items in batch job.";
+      level = #info;
+    };
+    activityLogMap.add(log.id, log);
+
+    let brain : BrainEntry = {
+      id = "brain1";
+      agentId = "agent1";
+      key = "goal";
+      value = "Maximize task throughput";
+      category = "objective";
+    };
+    brainEntryMap.add(brain.id, brain);
+
+    let cfg : ConfigEntry = {
+      id = "cfg1";
+      agentId = "agent1";
+      key = "MAX_RETRIES";
+      value = "3";
+      sensitive = false;
+    };
+    configEntryMap.add(cfg.id, cfg);
+
+    let secEvt : SecurityEvent = {
+      id = "secevt1";
+      agentId = "agent1";
+      timestamp = Time.now();
+      eventType = "AUTH_ATTEMPT";
+      description = "Successful authentication from known IP";
+      severity = #low;
+    };
+    securityEventMap.add(secEvt.id, secEvt);
   };
 };
