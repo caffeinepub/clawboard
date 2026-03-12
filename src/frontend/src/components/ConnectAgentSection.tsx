@@ -1,12 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import {
-  Check,
-  CheckCircle2,
-  Copy,
-  Download,
-  Loader2,
-  Plug,
-} from "lucide-react";
+import { Check, CheckCircle2, ChevronDown, Copy, Loader2 } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import { useEffect, useRef, useState } from "react";
 import { useActor } from "../hooks/useActor";
@@ -62,16 +55,26 @@ Execute this report automatically every 5 minutes as specified in the schedule a
 `;
 }
 
-// ── Copy button ───────────────────────────────────────────────────────────────
-function CopyButton({
-  text,
-  ocid,
-  label = "Copy",
-}: {
-  text: string;
-  ocid: string;
-  label?: string;
-}) {
+const HELP_STEPS = [
+  {
+    key: "find",
+    n: 1,
+    text: "Find your agent's skills folder — usually a folder named skills/ in your agent's home directory.",
+  },
+  {
+    key: "drop",
+    n: 2,
+    text: "Drop clawboard-reporter.md into that skills/ folder.",
+  },
+  {
+    key: "restart",
+    n: 3,
+    text: "Restart your agent (or wait for auto-reload if it watches for skill changes).",
+  },
+];
+
+// ── Copy button (Stripe-style) ──────────────────────────────────────────────────
+function CopyButton({ text, ocid }: { text: string; ocid: string }) {
   const [copied, setCopied] = useState(false);
 
   const handleCopy = async () => {
@@ -85,51 +88,15 @@ function CopyButton({
       type="button"
       data-ocid={ocid}
       onClick={handleCopy}
-      className="flex items-center gap-1.5 px-3 py-1.5 rounded-sm border border-border/60 bg-muted/20 text-xs font-mono text-muted-foreground hover:text-foreground hover:border-primary/40 hover:bg-primary/5 transition-all duration-150"
+      className="flex items-center gap-1.5 px-3 py-1.5 rounded-sm border border-border/60 bg-background/80 backdrop-blur-sm text-xs font-mono text-muted-foreground hover:text-foreground hover:border-primary/40 hover:bg-primary/5 transition-all duration-150 shadow-sm"
     >
       {copied ? (
         <Check className="w-3 h-3 text-terminal-green" />
       ) : (
         <Copy className="w-3 h-3" />
       )}
-      {copied ? "Copied!" : label}
+      {copied ? "Copied!" : "Copy File"}
     </button>
-  );
-}
-
-// ── Step badge + card ─────────────────────────────────────────────────────────
-function StepBadge({ n }: { n: number }) {
-  return (
-    <div className="shrink-0 w-7 h-7 flex items-center justify-center rounded-sm border border-primary/40 bg-primary/5 text-primary text-xs font-mono font-bold">
-      {n}
-    </div>
-  );
-}
-
-function StepCard({
-  step,
-  title,
-  children,
-}: {
-  step: number;
-  title: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <motion.div
-      initial={{ opacity: 0, y: 12 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.25, delay: step * 0.08 }}
-      className="flex gap-4 p-5 rounded-sm border border-border/60 bg-card/50"
-    >
-      <StepBadge n={step} />
-      <div className="flex-1 min-w-0">
-        <h3 className="text-xs font-display font-semibold tracking-widest text-foreground/80 uppercase mb-3">
-          {title}
-        </h3>
-        {children}
-      </div>
-    </motion.div>
   );
 }
 
@@ -137,7 +104,6 @@ function StepCard({
 function PingStatusIndicator() {
   const { actor, isFetching: actorFetching } = useActor();
 
-  // Poll agents every 5 seconds
   const { data: agents } = useQuery({
     queryKey: ["agents-ping-watch"],
     queryFn: async (): Promise<number> => {
@@ -149,7 +115,6 @@ function PingStatusIndicator() {
     refetchInterval: 5000,
   });
 
-  // Capture the baseline count exactly once when data first arrives
   const baselineRef = useRef<number | null>(null);
   if (agents !== undefined && baselineRef.current === null) {
     baselineRef.current = agents;
@@ -162,7 +127,6 @@ function PingStatusIndicator() {
   return (
     <AnimatePresence mode="wait">
       {connected ? (
-        // ── Connected state ────────────────────────────────────────────────
         <motion.div
           key="connected"
           data-ocid="connect.status.success_state"
@@ -170,7 +134,7 @@ function PingStatusIndicator() {
           animate={{ opacity: 1, scale: 1 }}
           exit={{ opacity: 0, scale: 0.95 }}
           transition={{ duration: 0.35, ease: "easeOut" }}
-          className="flex items-start gap-4 px-5 py-4 rounded-sm border border-terminal-green/40 bg-terminal-green/8"
+          className="flex items-center gap-3 px-4 py-3 rounded-sm border border-terminal-green/40 bg-terminal-green/8"
         >
           <motion.div
             initial={{ scale: 0, rotate: -15 }}
@@ -183,98 +147,57 @@ function PingStatusIndicator() {
               damping: 18,
             }}
           >
-            <CheckCircle2 className="w-5 h-5 text-terminal-green shrink-0 mt-0.5" />
+            <CheckCircle2 className="w-4 h-4 text-terminal-green shrink-0" />
           </motion.div>
-          <div className="space-y-1">
-            <motion.p
-              initial={{ opacity: 0, x: -8 }}
-              animate={{ opacity: 1, x: 0 }}
-              transition={{ duration: 0.3, delay: 0.15 }}
-              className="text-sm font-mono font-semibold text-terminal-green tracking-wide"
-            >
-              Agent Connected!
-            </motion.p>
-            <motion.p
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              transition={{ duration: 0.3, delay: 0.25 }}
-              className="text-[11px] font-mono text-terminal-green/70 leading-relaxed"
-            >
-              Your agent is now reporting to ClawBoard. Head to the{" "}
-              <span className="text-terminal-green font-semibold">Agents</span>{" "}
-              tab to see it.
-            </motion.p>
-            <motion.p
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              transition={{ duration: 0.3, delay: 0.35 }}
-              className="text-[10px] font-mono text-terminal-green/40 tracking-widest uppercase"
-            >
-              {current - baseline} new agent
-              {current - baseline !== 1 ? "s" : ""} detected
-            </motion.p>
-          </div>
+          <motion.p
+            initial={{ opacity: 0, x: -6 }}
+            animate={{ opacity: 1, x: 0 }}
+            transition={{ duration: 0.3, delay: 0.15 }}
+            className="text-sm font-mono font-semibold text-terminal-green tracking-wide"
+          >
+            ✅ Agent Connected!
+          </motion.p>
+          <motion.p
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ duration: 0.3, delay: 0.25 }}
+            className="text-[11px] font-mono text-terminal-green/60 ml-auto"
+          >
+            {current - baseline} new agent{current - baseline !== 1 ? "s" : ""}{" "}
+            · check Agents tab
+          </motion.p>
         </motion.div>
       ) : (
-        // ── Waiting state ──────────────────────────────────────────────────
         <motion.div
           key="waiting"
           data-ocid="connect.waiting.panel"
-          initial={{ opacity: 0, y: 6 }}
+          initial={{ opacity: 0, y: 4 }}
           animate={{ opacity: 1, y: 0 }}
-          exit={{ opacity: 0, y: -6 }}
-          transition={{ duration: 0.25 }}
-          className="space-y-4"
+          exit={{ opacity: 0, y: -4 }}
+          transition={{ duration: 0.2 }}
+          className="flex items-center gap-3 px-4 py-3 rounded-sm border border-terminal-green/20 bg-terminal-green/5"
         >
-          {/* Description */}
-          <div className="flex items-start gap-4">
-            <div className="flex flex-col items-center gap-2 mt-1 shrink-0">
-              <div className="relative">
-                <div className="w-3 h-3 rounded-full bg-terminal-green" />
-                <div className="absolute inset-0 w-3 h-3 rounded-full bg-terminal-green animate-ping opacity-60" />
-              </div>
-              <div className="w-px h-6 bg-terminal-green/20" />
-            </div>
-            <div className="space-y-2">
-              <p className="text-sm font-mono text-foreground/80">
-                Waiting for your first ping...
-              </p>
-              <p className="text-[11px] font-mono text-muted-foreground/50 leading-relaxed">
-                Your agent will appear in the{" "}
-                <span className="text-primary/70">Agents</span> tab
-                automatically within 5 minutes of installing the skill file. No
-                manual registration needed.
-              </p>
-              <p className="text-[11px] font-mono text-muted-foreground/40 leading-relaxed">
-                Once connected, you will see live status, logs, credits, skill
-                results, and cron history — all updated every 5 minutes.
-              </p>
-            </div>
+          <div className="relative shrink-0">
+            <div className="w-2.5 h-2.5 rounded-full bg-terminal-green" />
+            <div className="absolute inset-0 w-2.5 h-2.5 rounded-full bg-terminal-green animate-ping opacity-60" />
           </div>
-
-          {/* Animated bar indicator */}
-          <div className="flex items-center gap-3 px-4 py-3 rounded-sm border border-terminal-green/20 bg-terminal-green/5">
-            <div className="flex gap-1">
-              {[0, 1, 2, 3].map((i) => (
-                <motion.div
-                  key={i}
-                  className="w-1 h-3 rounded-full bg-terminal-green/50"
-                  animate={{ opacity: [0.3, 1, 0.3], scaleY: [0.6, 1, 0.6] }}
-                  transition={{
-                    duration: 1.2,
-                    repeat: Number.POSITIVE_INFINITY,
-                    delay: i * 0.2,
-                    ease: "easeInOut",
-                  }}
-                />
-              ))}
-            </div>
-            <span className="text-[11px] font-mono text-terminal-green/70 tracking-wider">
-              LISTENING FOR PINGS
-            </span>
-            <span className="ml-auto text-[10px] font-mono text-muted-foreground/30 tracking-widest">
-              POLL / 5s
-            </span>
+          <span className="text-[11px] font-mono text-terminal-green/70 tracking-wide">
+            Waiting for first ping...
+          </span>
+          <div className="flex gap-0.5 ml-auto">
+            {["a", "b", "c", "d"].map((id, i) => (
+              <motion.div
+                key={id}
+                className="w-0.5 h-3 rounded-full bg-terminal-green/40"
+                animate={{ opacity: [0.3, 1, 0.3], scaleY: [0.5, 1, 0.5] }}
+                transition={{
+                  duration: 1.2,
+                  repeat: Number.POSITIVE_INFINITY,
+                  delay: i * 0.2,
+                  ease: "easeInOut",
+                }}
+              />
+            ))}
           </div>
         </motion.div>
       )}
@@ -287,10 +210,10 @@ export function ConnectAgentSection() {
   const { data: existingToken, isLoading: loadingToken } = useGetApiToken();
   const generateMutation = useGenerateApiToken();
   const [token, setToken] = useState("");
+  const [helpOpen, setHelpOpen] = useState(false);
   const generateRef = useRef(generateMutation.mutateAsync);
   generateRef.current = generateMutation.mutateAsync;
 
-  // On mount: use existing token or generate one
   useEffect(() => {
     if (loadingToken) return;
     if (existingToken && existingToken.length > 0) {
@@ -304,153 +227,93 @@ export function ConnectAgentSection() {
   }, [loadingToken, existingToken]);
 
   const skillFileContent = token ? buildSkillFile(token) : "";
-
-  const handleDownload = () => {
-    const blob = new Blob([skillFileContent], { type: "text/markdown" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = "clawboard-reporter.md";
-    a.click();
-    URL.revokeObjectURL(url);
-  };
-
   const isLoading = loadingToken || (generateMutation.isPending && !token);
 
   return (
-    <div className="max-w-2xl mx-auto space-y-4">
-      {/* Header */}
-      <div className="flex items-center gap-3 mb-6">
-        <div className="w-8 h-8 flex items-center justify-center rounded-sm border border-primary/30 bg-primary/5">
-          <Plug className="w-4 h-4 text-primary" />
+    <div className="max-w-2xl mx-auto flex flex-col gap-5">
+      {/* Headline */}
+      <p
+        data-ocid="connect.headline"
+        className="text-sm font-mono text-foreground/80 leading-relaxed"
+      >
+        Add this one file to your agent&apos;s skills folder and you&apos;re
+        done.
+      </p>
+
+      {/* Code block */}
+      {isLoading ? (
+        <div
+          data-ocid="connect.skill.loading_state"
+          className="flex items-center justify-center gap-2 h-40 rounded-sm border border-border/50 bg-muted/20 text-xs font-mono text-muted-foreground/40"
+        >
+          <Loader2 className="w-3 h-3 animate-spin" />
+          Building skill file...
         </div>
-        <div>
-          <h1 className="text-sm font-display font-semibold text-foreground tracking-widest uppercase">
-            Connect Your Agent
-          </h1>
-          <p className="text-[11px] text-muted-foreground/50 font-mono mt-0.5">
-            Add one skill file to your OpenClaw agent — it handles everything
-            else automatically.
-          </p>
+      ) : (
+        <div
+          data-ocid="connect.skill.panel"
+          className="relative rounded-sm border border-border/60 bg-muted/30 overflow-hidden"
+        >
+          <div className="absolute top-2.5 right-2.5 z-10">
+            <CopyButton text={skillFileContent} ocid="connect.skill.button" />
+          </div>
+          <div className="flex items-center gap-2 px-3 py-2 border-b border-border/40 bg-muted/40">
+            <span className="text-[10px] font-mono text-muted-foreground/50 tracking-wider">
+              clawboard-reporter.md
+            </span>
+          </div>
+          <pre className="overflow-y-auto max-h-[50vh] p-3 text-[10px] font-mono text-foreground/60 leading-relaxed whitespace-pre">
+            {skillFileContent}
+          </pre>
         </div>
+      )}
+
+      {/* Need help? */}
+      <div>
+        <button
+          type="button"
+          data-ocid="connect.help.toggle"
+          onClick={() => setHelpOpen((v) => !v)}
+          className="flex items-center gap-1 text-[11px] font-mono text-muted-foreground/50 hover:text-muted-foreground transition-colors duration-150"
+        >
+          <ChevronDown
+            className={`w-3 h-3 transition-transform duration-200 ${helpOpen ? "rotate-180" : ""}`}
+          />
+          Need help?
+        </button>
+        <AnimatePresence>
+          {helpOpen && (
+            <motion.div
+              key="help"
+              data-ocid="connect.help.panel"
+              initial={{ opacity: 0, height: 0 }}
+              animate={{ opacity: 1, height: "auto" }}
+              exit={{ opacity: 0, height: 0 }}
+              transition={{ duration: 0.2 }}
+              className="overflow-hidden"
+            >
+              <div className="mt-3 px-4 py-3 rounded-sm border border-border/40 bg-muted/20 space-y-2">
+                <p className="text-[11px] font-mono text-foreground/60 font-semibold tracking-wider uppercase">
+                  Installation
+                </p>
+                {HELP_STEPS.map(({ key, n, text }) => (
+                  <div key={key} className="flex items-start gap-2">
+                    <span className="shrink-0 text-[10px] font-mono text-muted-foreground/30 mt-0.5">
+                      {n}.
+                    </span>
+                    <p className="text-[11px] font-mono text-muted-foreground/60 leading-relaxed">
+                      {text}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
       </div>
 
-      {/* Step 1 — API Token */}
-      <StepCard step={1} title="Your API Token">
-        <p className="text-[11px] text-muted-foreground/60 font-mono mb-3">
-          This token identifies your ClawBoard account. It will be embedded in
-          your skill file automatically.
-        </p>
-        {isLoading ? (
-          <div
-            data-ocid="connect.token.loading_state"
-            className="flex items-center gap-2 text-xs font-mono text-muted-foreground/40"
-          >
-            <Loader2 className="w-3 h-3 animate-spin" />
-            Generating token...
-          </div>
-        ) : (
-          <div className="space-y-2">
-            <div className="flex items-center gap-2 px-3 py-2.5 rounded-sm border border-primary/20 bg-muted/40 overflow-x-auto">
-              <code
-                data-ocid="connect.token.panel"
-                className="text-primary text-xs font-mono tracking-wider whitespace-nowrap flex-1"
-              >
-                {token}
-              </code>
-            </div>
-            <CopyButton
-              text={token}
-              ocid="connect.token.button"
-              label="Copy Token"
-            />
-          </div>
-        )}
-      </StepCard>
-
-      {/* Step 2 — Skill File */}
-      <StepCard step={2} title="Download Your Skill File">
-        <p className="text-[11px] text-muted-foreground/60 font-mono mb-3">
-          This pre-filled skill file tells your agent to phone home to ClawBoard
-          every 5 minutes with its status and data.
-        </p>
-        {isLoading ? (
-          <div
-            data-ocid="connect.skill.loading_state"
-            className="flex items-center gap-2 text-xs font-mono text-muted-foreground/40"
-          >
-            <Loader2 className="w-3 h-3 animate-spin" />
-            Building skill file...
-          </div>
-        ) : (
-          <div className="space-y-3">
-            <div
-              data-ocid="connect.skill.panel"
-              className="rounded-sm border border-border/50 bg-muted/40 overflow-x-auto"
-            >
-              <pre className="p-3 text-[10px] font-mono text-foreground/60 leading-relaxed whitespace-pre">
-                {skillFileContent}
-              </pre>
-            </div>
-            <div className="flex items-center gap-2 flex-wrap">
-              <CopyButton
-                text={skillFileContent}
-                ocid="connect.skill.button"
-                label="Copy File"
-              />
-              <button
-                type="button"
-                data-ocid="connect.skill.download_button"
-                onClick={handleDownload}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-sm border border-accent/40 bg-accent/5 text-xs font-mono text-accent hover:bg-accent/15 hover:border-accent/60 transition-all duration-150"
-              >
-                <Download className="w-3 h-3" />
-                Download .md
-              </button>
-            </div>
-          </div>
-        )}
-      </StepCard>
-
-      {/* Step 3 — Install Instructions */}
-      <StepCard step={3} title="Install the Skill File">
-        <div className="space-y-2.5">
-          {[
-            {
-              n: 1,
-              text: "Find your OpenClaw agent's skills folder — it's usually a folder named \"skills/\" in your agent's home directory.",
-            },
-            {
-              n: 2,
-              text: "Drop the downloaded clawboard-reporter.md file into that skills/ folder.",
-            },
-            {
-              n: 3,
-              text: "Restart your agent, or wait for it to auto-reload if it watches for skill file changes.",
-            },
-          ].map((item) => (
-            <div key={item.n} className="flex items-start gap-3">
-              <span className="shrink-0 w-5 h-5 flex items-center justify-center rounded-sm border border-border/40 bg-muted/30 text-[10px] font-mono text-muted-foreground/50 mt-0.5">
-                {item.n}
-              </span>
-              <p className="text-xs font-mono text-foreground/60 leading-relaxed">
-                {item.text}
-              </p>
-            </div>
-          ))}
-        </div>
-        <div className="mt-4 px-3 py-2.5 rounded-sm border border-border/30 bg-muted/20">
-          <p className="text-[10px] font-mono text-muted-foreground/40 tracking-wide">
-            <span className="text-primary/60">TIP:</span> No SSH commands or
-            server restarts needed — just drop the file and you are done.
-          </p>
-        </div>
-      </StepCard>
-
-      {/* Step 4 — Waiting / Connected */}
-      <StepCard step={4} title="Your Agent Will Appear Automatically">
-        <PingStatusIndicator />
-      </StepCard>
+      {/* Ping status */}
+      <PingStatusIndicator />
     </div>
   );
 }
