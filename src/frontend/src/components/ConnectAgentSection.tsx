@@ -6,6 +6,7 @@ import {
   Copy,
   Loader2,
   Radio,
+  Shield,
 } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import { useEffect, useRef, useState } from "react";
@@ -254,7 +255,11 @@ function PingStatusIndicator() {
 }
 
 // ── Main section ──────────────────────────────────────────────────────────────
-export function ConnectAgentSection() {
+export function ConnectAgentSection({
+  onNavigateToPrivacy,
+}: {
+  onNavigateToPrivacy?: () => void;
+}) {
   const { data: existingToken, isLoading: loadingToken } = useGetApiToken();
   const generateMutation = useGenerateApiToken();
   const [token, setToken] = useState("");
@@ -301,13 +306,36 @@ export function ConnectAgentSection() {
   return (
     <div className="max-w-2xl mx-auto flex flex-col gap-5">
       {/* Headline */}
-      <p
-        data-ocid="connect.headline"
-        className="text-sm font-mono text-foreground/80 leading-relaxed"
-      >
-        Add this one file to your agent&apos;s skills folder and you&apos;re
-        done.
-      </p>
+      <div>
+        <p
+          data-ocid="connect.headline"
+          className="text-sm font-mono text-foreground/80 leading-relaxed"
+        >
+          Add this one file to your agent&apos;s skills folder and you&apos;re
+          done.
+        </p>
+        {/* Trust banner */}
+        <div className="flex items-center gap-1.5 mt-2">
+          <Shield className="w-3 h-3 text-muted-foreground/40 shrink-0" />
+          {onNavigateToPrivacy ? (
+            <button
+              type="button"
+              data-ocid="connect.privacy.link"
+              onClick={onNavigateToPrivacy}
+              className="text-xs text-muted-foreground/45 hover:text-primary/70 transition-colors duration-150 font-mono text-left"
+            >
+              Your data is end-to-end token-gated. Only you can see your agents.
+            </button>
+          ) : (
+            <span
+              data-ocid="connect.privacy.link"
+              className="text-xs text-muted-foreground/45 font-mono"
+            >
+              Your data is end-to-end token-gated. Only you can see your agents.
+            </span>
+          )}
+        </div>
+      </div>
 
       {/* Code block — always shown immediately */}
       <div

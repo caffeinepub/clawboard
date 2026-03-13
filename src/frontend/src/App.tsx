@@ -2,16 +2,19 @@ import { Toaster } from "@/components/ui/sonner";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import {
   Activity,
+  BarChart2,
   Bell,
   Bot,
   Brain,
   Clock,
   CreditCard,
   Gamepad2,
+  Github,
   Loader2,
   Menu,
   Moon,
   Plug,
+  Plug2,
   Shield,
   Sun,
   Wrench,
@@ -21,22 +24,35 @@ import {
 import { AnimatePresence, motion } from "motion/react";
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
+import { Variant_idle_failed_running } from "./backend";
 import { ActivitySection } from "./components/ActivitySection";
-import { AgentsSection } from "./components/AgentsSection";
+import { AgentControlCenter } from "./components/AgentControlCenter";
+import { AgentOpsSection } from "./components/AgentOpsSection";
 import { BrainSection } from "./components/BrainSection";
 import { ConnectAgentSection } from "./components/ConnectAgentSection";
 import { ControlsSection } from "./components/ControlsSection";
 import { CreditsSection } from "./components/CreditsSection";
 import { CronSection } from "./components/CronSection";
+import { FleetSection } from "./components/FleetSection";
+import { IntegrationsSection } from "./components/IntegrationsSection";
+import { PrivacySection } from "./components/PrivacySection";
 import { SecuritySection } from "./components/SecuritySection";
 import { SkillsSection } from "./components/SkillsSection";
-import { useGetAllAgents, useSeedData } from "./hooks/useQueries";
+import {
+  useGetAllAgents,
+  useGetAllCredits,
+  useGetAllCronJobs,
+  useSeedData,
+} from "./hooks/useQueries";
 import { useTheme } from "./hooks/useTheme";
 
 const queryClient = new QueryClient();
 
 type Section =
-  | "agents"
+  | "fleet"
+  | "agent-detail"
+  | "agentops"
+  | "integrations"
   | "brain"
   | "skills"
   | "cron"
@@ -44,7 +60,8 @@ type Section =
   | "activity"
   | "security"
   | "connect"
-  | "controls";
+  | "controls"
+  | "privacy";
 
 const NAV_ITEMS: {
   id: Section;
@@ -53,16 +70,22 @@ const NAV_ITEMS: {
   ocid: string;
 }[] = [
   {
-    id: "agents",
-    label: "Agents",
+    id: "fleet",
+    label: "Fleet",
     icon: <Bot className="w-4 h-4" />,
-    ocid: "nav.agents.link",
+    ocid: "nav.fleet.link",
   },
   {
-    id: "brain",
-    label: "Brain",
-    icon: <Brain className="w-4 h-4" />,
-    ocid: "nav.brain.link",
+    id: "agentops",
+    label: "AgentOps",
+    icon: <BarChart2 className="w-4 h-4" />,
+    ocid: "nav.agentops.link",
+  },
+  {
+    id: "integrations",
+    label: "Integrations",
+    icon: <Plug2 className="w-4 h-4" />,
+    ocid: "nav.integrations.link",
   },
   {
     id: "skills",
@@ -89,6 +112,12 @@ const NAV_ITEMS: {
     ocid: "nav.activity.link",
   },
   {
+    id: "brain",
+    label: "Brain Viewer",
+    icon: <Brain className="w-4 h-4" />,
+    ocid: "nav.brain.link",
+  },
+  {
     id: "security",
     label: "Security & Config",
     icon: <Shield className="w-4 h-4" />,
@@ -102,14 +131,17 @@ const NAV_ITEMS: {
   },
   {
     id: "controls",
-    label: "Controls & Leaderboard",
+    label: "Controls",
     icon: <Gamepad2 className="w-4 h-4" />,
     ocid: "nav.controls.link",
   },
 ];
 
 const SECTION_LABELS: Record<Section, string> = {
-  agents: "Agent Overview",
+  fleet: "Fleet Overview",
+  "agent-detail": "Agent Control Center",
+  agentops: "AgentOps Dashboard",
+  integrations: "Integrations",
   brain: "Brain Viewer",
   skills: "Skills Browser",
   cron: "Cron Job Scheduler",
@@ -118,9 +150,10 @@ const SECTION_LABELS: Record<Section, string> = {
   security: "Security & Config",
   connect: "Connect Agent",
   controls: "Controls & Leaderboard",
+  privacy: "Privacy & Trust",
 };
 
-const STALE_THRESHOLD_MS = 10 * 60 * 1000; // 10 minutes
+const STALE_THRESHOLD_MS = 10 * 60 * 1000;
 
 function formatRelativeTime(ms: number): string {
   const minutes = Math.floor(ms / 60_000);
@@ -131,35 +164,87 @@ function formatRelativeTime(ms: number): string {
 }
 
 function AppShell() {
-  const [active, setActive] = useState<Section>("agents");
+  const [active, setActive] = useState<Section>("fleet");
+  const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [notifOpen, setNotifOpen] = useState(false);
+  const [dismissedAlertIds, setDismissedAlertIds] = useState<Set<number>>(
+    new Set(),
+  );
   const seedMutation = useSeedData();
   const { theme, toggleTheme } = useTheme();
 
   const { data: agents } = useGetAllAgents();
+  const { data: credits } = useGetAllCredits();
+  const { data: cronJobs } = useGetAllCronJobs();
 
   const liveAlerts = useMemo(() => {
-    if (!agents || agents.length === 0) return [];
     const nowMs = Date.now();
-    return agents
-      .filter((agent) => {
-        const lastActiveMs = Number(agent.lastActive) / 1_000_000;
-        return nowMs - lastActiveMs > STALE_THRESHOLD_MS;
-      })
-      .map((agent, idx) => {
+    const alerts: {
+      id: number;
+      type: "warning" | "error" | "info";
+      text: string;
+      time: string;
+    }[] = [];
+    const agentName = (id: string) =>
+      agents?.find((a) => a.id === id)?.name ?? id;
+
+    if (agents && agents.length > 0) {
+      for (const agent of agents) {
         const lastActiveMs = Number(agent.lastActive) / 1_000_000;
         const diffMs = nowMs - lastActiveMs;
-        return {
-          id: idx + 1,
-          type: "warning" as "warning" | "error" | "info",
-          text: `Agent ${agent.name} hasn't pinged in ${formatRelativeTime(diffMs)}`,
-          time: formatRelativeTime(diffMs),
-        };
-      });
-  }, [agents]);
+        if (diffMs > STALE_THRESHOLD_MS) {
+          alerts.push({
+            id: alerts.length + 1,
+            type: "warning",
+            text: `Agent ${agent.name} hasn't pinged in ${formatRelativeTime(diffMs)}`,
+            time: formatRelativeTime(diffMs),
+          });
+        }
+      }
+    }
+    if (credits && credits.length > 0) {
+      for (const credit of credits) {
+        const hasTriggered = credit.costAlerts.some(
+          ([threshold, triggered]) => triggered && credit.balance < threshold,
+        );
+        if (hasTriggered) {
+          alerts.push({
+            id: alerts.length + 1,
+            type: "warning",
+            text: `Agent ${agentName(credit.agentId)}: low credit balance (${credit.balance} cr remaining)`,
+            time: "now",
+          });
+        }
+      }
+    }
+    if (cronJobs && cronJobs.length > 0) {
+      for (const job of cronJobs) {
+        if (job.status === Variant_idle_failed_running.failed) {
+          alerts.push({
+            id: alerts.length + 1,
+            type: "error",
+            text: `Cron job '${job.name}' failed on agent ${agentName(job.agentId)}`,
+            time: "now",
+          });
+        }
+      }
+    }
+    return alerts;
+  }, [agents, credits, cronJobs]);
 
-  const notifCount = liveAlerts.length;
+  const visibleAlerts = useMemo(
+    () => liveAlerts.filter((a) => !dismissedAlertIds.has(a.id)),
+    [liveAlerts, dismissedAlertIds],
+  );
+
+  const notifCount = visibleAlerts.length;
+  const dismissAlert = (id: number) =>
+    setDismissedAlertIds((prev) => new Set([...prev, id]));
+  const dismissAll = () =>
+    setDismissedAlertIds(
+      (prev) => new Set([...prev, ...visibleAlerts.map((a) => a.id)]),
+    );
 
   const handleSeed = async () => {
     try {
@@ -172,6 +257,11 @@ function AppShell() {
         description: "Could not initialize system data.",
       });
     }
+  };
+
+  const handleSetActive = (s: Section) => {
+    setActive(s);
+    setSidebarOpen(false);
   };
 
   return (
@@ -188,16 +278,14 @@ function AppShell() {
         )}
       </AnimatePresence>
 
-      {/* Sidebar — desktop */}
       <aside className="hidden lg:flex flex-col w-60 shrink-0 bg-sidebar border-r border-sidebar-border h-screen">
         <SidebarContent
           active={active}
-          setActive={setActive}
+          setActive={handleSetActive}
           setSidebarOpen={setSidebarOpen}
         />
       </aside>
 
-      {/* Sidebar — mobile */}
       <AnimatePresence>
         {sidebarOpen && (
           <motion.aside
@@ -209,14 +297,13 @@ function AppShell() {
           >
             <SidebarContent
               active={active}
-              setActive={setActive}
+              setActive={handleSetActive}
               setSidebarOpen={setSidebarOpen}
             />
           </motion.aside>
         )}
       </AnimatePresence>
 
-      {/* Main */}
       <div className="flex flex-1 flex-col min-w-0 overflow-hidden">
         <header className="flex items-center justify-between gap-4 px-4 py-3 border-b border-border/60 bg-background/90 backdrop-blur-sm shrink-0">
           <div className="flex items-center gap-3">
@@ -266,36 +353,42 @@ function AppShell() {
                       <span className="text-[10px] font-mono font-semibold tracking-widest text-muted-foreground uppercase">
                         Alerts
                       </span>
-                      <button
-                        type="button"
-                        data-ocid="header.notifications.close_button"
-                        onClick={() => setNotifOpen(false)}
-                        className="text-muted-foreground/50 hover:text-foreground"
-                      >
-                        <X className="w-3 h-3" />
-                      </button>
+                      <div className="flex items-center gap-2">
+                        {visibleAlerts.length > 0 && (
+                          <button
+                            type="button"
+                            data-ocid="header.notifications.clear_button"
+                            onClick={dismissAll}
+                            className="text-[10px] font-mono text-muted-foreground/50 hover:text-foreground transition-colors"
+                          >
+                            Clear all
+                          </button>
+                        )}
+                        <button
+                          type="button"
+                          data-ocid="header.notifications.close_button"
+                          onClick={() => setNotifOpen(false)}
+                          className="text-muted-foreground/50 hover:text-foreground"
+                        >
+                          <X className="w-3 h-3" />
+                        </button>
+                      </div>
                     </div>
                     <div className="divide-y divide-border/30">
-                      {liveAlerts.length === 0 ? (
+                      {visibleAlerts.length === 0 ? (
                         <div className="px-3 py-4 text-center">
                           <p className="text-[11px] font-mono text-muted-foreground/50">
                             All agents reporting on time
                           </p>
                         </div>
                       ) : (
-                        liveAlerts.map((alert) => (
+                        visibleAlerts.map((alert) => (
                           <div
                             key={alert.id}
                             className="px-3 py-2.5 flex items-start gap-2.5 hover:bg-muted/20 transition-colors"
                           >
                             <span
-                              className={`mt-0.5 w-1.5 h-1.5 rounded-full shrink-0 ${
-                                alert.type === "error"
-                                  ? "bg-destructive"
-                                  : alert.type === "warning"
-                                    ? "bg-terminal-amber"
-                                    : "bg-primary"
-                              }`}
+                              className={`mt-0.5 w-1.5 h-1.5 rounded-full shrink-0 ${alert.type === "error" ? "bg-destructive" : alert.type === "warning" ? "bg-terminal-amber" : "bg-primary"}`}
                             />
                             <div className="flex-1 min-w-0">
                               <p className="text-[11px] font-mono text-foreground/80 leading-snug">
@@ -305,6 +398,15 @@ function AppShell() {
                                 {alert.time}
                               </p>
                             </div>
+                            <button
+                              type="button"
+                              data-ocid={`header.notifications.delete_button.${alert.id}`}
+                              onClick={() => dismissAlert(alert.id)}
+                              className="mt-0.5 text-muted-foreground/30 hover:text-foreground/70 transition-colors shrink-0"
+                              aria-label="Dismiss alert"
+                            >
+                              <X className="w-3 h-3" />
+                            </button>
                           </div>
                         ))
                       )}
@@ -314,7 +416,6 @@ function AppShell() {
               </AnimatePresence>
             </div>
 
-            {/* Theme toggle */}
             <button
               type="button"
               data-ocid="header.theme_toggle"
@@ -343,7 +444,6 @@ function AppShell() {
               </span>
             </button>
 
-            {/* Seed data */}
             <button
               type="button"
               data-ocid="header.seed_button"
@@ -370,32 +470,72 @@ function AppShell() {
               exit={{ opacity: 0, y: -8 }}
               transition={{ duration: 0.2 }}
             >
-              {active === "agents" && <AgentsSection setActive={setActive} />}
+              {active === "fleet" && (
+                <FleetSection
+                  setActive={handleSetActive}
+                  setSelectedAgentId={setSelectedAgentId}
+                />
+              )}
+              {active === "agent-detail" && (
+                <AgentControlCenter
+                  agentId={selectedAgentId ?? ""}
+                  onBack={() => handleSetActive("fleet")}
+                />
+              )}
+              {active === "agentops" && <AgentOpsSection />}
+              {active === "integrations" && <IntegrationsSection />}
               {active === "brain" && <BrainSection />}
               {active === "skills" && <SkillsSection />}
               {active === "cron" && <CronSection />}
               {active === "credits" && <CreditsSection />}
               {active === "activity" && <ActivitySection />}
               {active === "security" && <SecuritySection />}
-              {active === "connect" && <ConnectAgentSection />}
+              {active === "connect" && (
+                <ConnectAgentSection
+                  onNavigateToPrivacy={() => handleSetActive("privacy")}
+                />
+              )}
               {active === "controls" && <ControlsSection />}
+              {active === "privacy" && (
+                <PrivacySection
+                  onNavigateToSecurity={() => handleSetActive("security")}
+                />
+              )}
             </motion.div>
           </AnimatePresence>
         </main>
 
-        <footer className="shrink-0 px-4 py-2 border-t border-border/30 flex items-center justify-between">
+        <footer className="shrink-0 px-4 py-2 border-t border-border/30 flex flex-wrap items-center justify-between gap-x-4 gap-y-1">
           <span className="text-[10px] text-muted-foreground/30 tracking-widest">
-            CLAWBOARD v1.0.0
+            CLAWBOARD v2.0.0
           </span>
-          <a
-            href={`https://caffeine.ai?utm_source=caffeine-footer&utm_medium=referral&utm_content=${encodeURIComponent(window.location.hostname)}`}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="text-[10px] text-muted-foreground/30 hover:text-muted-foreground/60 transition-colors tracking-wide"
-          >
-            &copy; {new Date().getFullYear()} Built with &hearts; using
-            caffeine.ai
-          </a>
+          <div className="flex items-center gap-4">
+            <button
+              type="button"
+              data-ocid="footer.privacy.link"
+              onClick={() => handleSetActive("privacy")}
+              className="text-[10px] text-muted-foreground/30 hover:text-muted-foreground/60 transition-colors tracking-wide"
+            >
+              Privacy & Trust
+            </button>
+            <button
+              type="button"
+              data-ocid="footer.github.link"
+              className="flex items-center gap-1 text-[10px] text-muted-foreground/30 hover:text-muted-foreground/60 transition-colors tracking-wide"
+            >
+              <Github className="w-3 h-3" />
+              Self-host
+            </button>
+            <a
+              href={`https://caffeine.ai?utm_source=caffeine-footer&utm_medium=referral&utm_content=${encodeURIComponent(window.location.hostname)}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-[10px] text-muted-foreground/30 hover:text-muted-foreground/60 transition-colors tracking-wide"
+            >
+              &copy; {new Date().getFullYear()} Built with &hearts; using
+              caffeine.ai
+            </a>
+          </div>
         </footer>
       </div>
 
@@ -455,7 +595,9 @@ function SidebarContent({
           Navigation
         </p>
         {NAV_ITEMS.map((item) => {
-          const isActive = active === item.id;
+          const isActive =
+            active === item.id ||
+            (item.id === "fleet" && active === "agent-detail");
           return (
             <button
               type="button"
@@ -487,7 +629,6 @@ function SidebarContent({
         })}
       </nav>
 
-      {/* Footer — backend status */}
       <div className="px-4 py-3 border-t border-sidebar-border/50">
         <div className="text-[9px] text-muted-foreground/25 tracking-widest space-y-0.5">
           <div className="flex items-center justify-between">

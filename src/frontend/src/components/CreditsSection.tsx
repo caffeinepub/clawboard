@@ -6,7 +6,7 @@ import {
   WifiOff,
 } from "lucide-react";
 import { motion } from "motion/react";
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import {
   useGetAllAgents,
   useGetAllCredits,
@@ -494,6 +494,32 @@ export function CreditsSection() {
         />
         <ProviderPanel providers={providers} />
       </section>
+
+      {/* Divider */}
+      <div className="relative">
+        <div className="h-px bg-border/40" />
+        <span className="absolute left-1/2 -translate-x-1/2 -translate-y-1/2 px-3 bg-background text-[9px] tracking-widest text-muted-foreground/30 uppercase">
+          Spend Analysis
+        </span>
+      </div>
+
+      {/* Anthropic Spend Tracker */}
+      <section>
+        <PanelHeading label="Anthropic Spend Tracker" sub="Current month" />
+        <AnthropicSpendPanel />
+      </section>
+
+      {/* Monthly Budget */}
+      <section>
+        <PanelHeading label="Monthly Budget" sub="Track vs target" />
+        <MonthlyBudgetPanel />
+      </section>
+
+      {/* Cost per task */}
+      <section>
+        <PanelHeading label="Cost Per Task" sub="Last 10 tasks" />
+        <CostPerTaskPanel />
+      </section>
     </div>
   );
 }
@@ -508,6 +534,256 @@ function PanelHeading({ label, sub }: { label: string; sub: string }) {
       <span className="text-[10px] text-muted-foreground/30 tracking-widest">
         {sub}
       </span>
+    </div>
+  );
+}
+
+// ── Anthropic Spend Panel ─────────────────────────────────────────────────────
+const ANTHROPIC_MODELS = [
+  { model: "claude-opus-4", tokens: 124000, costPer1M: 15.0 },
+  { model: "claude-sonnet-4-5", tokens: 487000, costPer1M: 3.0 },
+  { model: "claude-haiku-4", tokens: 892000, costPer1M: 0.25 },
+];
+
+function AnthropicSpendPanel() {
+  const totalSpend = ANTHROPIC_MODELS.reduce(
+    (sum, m) => sum + (m.tokens / 1_000_000) * m.costPer1M,
+    0,
+  );
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center gap-3 p-4 rounded-sm border border-primary/20 bg-primary/5">
+        <div>
+          <p className="text-[9px] tracking-widest text-muted-foreground/40 uppercase">
+            Total Anthropic Spend (Month)
+          </p>
+          <p className="text-2xl font-display font-bold text-primary mt-0.5">
+            ${totalSpend.toFixed(2)}
+          </p>
+        </div>
+      </div>
+      <div className="rounded-sm border border-border overflow-hidden">
+        <table className="w-full text-xs font-mono">
+          <thead>
+            <tr className="border-b border-border bg-muted/20">
+              {["Model", "Tokens Used", "Cost / 1M", "Total Cost"].map((h) => (
+                <th
+                  key={h}
+                  className="px-4 py-2.5 text-left text-[9px] tracking-widest text-muted-foreground/40 uppercase font-normal"
+                >
+                  {h}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {ANTHROPIC_MODELS.map((m, i) => {
+              const cost = (m.tokens / 1_000_000) * m.costPer1M;
+              return (
+                <tr
+                  key={m.model}
+                  data-ocid={`credits.anthropic.item.${i + 1}`}
+                  className="border-b border-border/40 hover:bg-muted/10"
+                >
+                  <td className="px-4 py-2.5 text-foreground/80 font-semibold">
+                    {m.model}
+                  </td>
+                  <td className="px-4 py-2.5 text-muted-foreground/60">
+                    {(m.tokens / 1000).toFixed(0)}K
+                  </td>
+                  <td className="px-4 py-2.5 text-accent/80">
+                    ${m.costPer1M.toFixed(2)}
+                  </td>
+                  <td className="px-4 py-2.5 text-primary font-semibold">
+                    ${cost.toFixed(2)}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+// ── Monthly Budget Panel ──────────────────────────────────────────────────────
+
+function MonthlyBudgetPanel() {
+  const [budget, setBudget] = useState(100);
+  const spent = 47.23;
+  const pct = Math.min(100, (spent / budget) * 100);
+  const isWarning = pct > 70;
+  const isOver = pct >= 100;
+
+  return (
+    <div className="p-4 rounded-sm border border-border bg-card space-y-4">
+      <div className="flex items-center justify-between gap-4 flex-wrap">
+        <div>
+          <p className="text-[9px] tracking-widest text-muted-foreground/40 uppercase">
+            Budget Used
+          </p>
+          <p className="text-lg font-display font-bold text-foreground mt-0.5">
+            <span
+              className={
+                isOver
+                  ? "text-terminal-red"
+                  : isWarning
+                    ? "text-terminal-amber"
+                    : "text-primary"
+              }
+            >
+              ${spent.toFixed(2)}
+            </span>
+            <span className="text-muted-foreground/40 text-sm">
+              {" "}
+              / ${budget.toFixed(2)}
+            </span>
+          </p>
+        </div>
+        <div className="flex items-center gap-2">
+          <label
+            htmlFor="credits-budget-input"
+            className="text-[9px] tracking-widest text-muted-foreground/40 uppercase"
+          >
+            Budget ($)
+          </label>
+          <input
+            id="credits-budget-input"
+            data-ocid="credits.budget.input"
+            type="number"
+            value={budget}
+            onChange={(e) => setBudget(Math.max(1, Number(e.target.value)))}
+            className="w-20 px-2 py-1 bg-background border border-border rounded-sm text-xs font-mono text-foreground focus:outline-none focus:border-primary/50"
+          />
+        </div>
+      </div>
+      <div>
+        <div className="flex justify-between text-[9px] text-muted-foreground/40 mb-1.5">
+          <span>0</span>
+          <span className={isOver ? "text-terminal-red font-semibold" : ""}>
+            {pct.toFixed(0)}%
+          </span>
+          <span>${budget}</span>
+        </div>
+        <div className="h-2 w-full bg-muted/30 rounded-full overflow-hidden">
+          <div
+            className={`h-full rounded-full transition-all duration-700 ${isOver ? "bg-terminal-red" : isWarning ? "bg-terminal-amber" : "bg-primary"}`}
+            style={{ width: `${pct}%` }}
+          />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Cost Per Task Panel ───────────────────────────────────────────────────────
+const COST_PER_TASK = [
+  {
+    task: "Research competitor pricing",
+    model: "claude-3-5-sonnet",
+    tokens: 8400,
+    cost: 0.025,
+  },
+  {
+    task: "Update MEMORY.md",
+    model: "claude-haiku-4",
+    tokens: 1200,
+    cost: 0.0003,
+  },
+  {
+    task: "Daily analytics cron",
+    model: "deepseek-chat",
+    tokens: 12000,
+    cost: 0.002,
+  },
+  {
+    task: "Webhook payload delivery",
+    model: "claude-3-5-sonnet",
+    tokens: 2800,
+    cost: 0.008,
+  },
+  {
+    task: "Q4 CSV analysis",
+    model: "claude-3-opus",
+    tokens: 34000,
+    cost: 0.51,
+  },
+  {
+    task: "Slack digest notification",
+    model: "claude-haiku-4",
+    tokens: 800,
+    cost: 0.0002,
+  },
+  {
+    task: "Scrape product listings",
+    model: "deepseek-chat",
+    tokens: 18000,
+    cost: 0.003,
+  },
+  {
+    task: "Write daily summary",
+    model: "claude-haiku-4",
+    tokens: 1600,
+    cost: 0.0004,
+  },
+  {
+    task: "Market research report",
+    model: "claude-3-5-sonnet",
+    tokens: 22000,
+    cost: 0.066,
+  },
+  {
+    task: "Shell script execution",
+    model: "claude-haiku-4",
+    tokens: 600,
+    cost: 0.00015,
+  },
+];
+
+function CostPerTaskPanel() {
+  return (
+    <div className="rounded-sm border border-border overflow-hidden">
+      <div className="overflow-x-auto">
+        <table className="w-full text-xs font-mono">
+          <thead>
+            <tr className="border-b border-border bg-muted/20">
+              {["Task", "Model", "Tokens", "Cost (USD)"].map((h) => (
+                <th
+                  key={h}
+                  className="px-4 py-2.5 text-left text-[9px] tracking-widest text-muted-foreground/40 uppercase font-normal"
+                >
+                  {h}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {COST_PER_TASK.map((t, i) => (
+              <tr
+                key={t.task}
+                data-ocid={`credits.tasks.item.${i + 1}`}
+                className="border-b border-border/40 hover:bg-muted/10"
+              >
+                <td className="px-4 py-2.5 text-foreground/70 max-w-[200px] truncate">
+                  {t.task}
+                </td>
+                <td className="px-4 py-2.5">
+                  <span className="px-1.5 py-0.5 rounded-sm bg-accent/8 border border-accent/15 text-accent/70 text-[10px]">
+                    {t.model}
+                  </span>
+                </td>
+                <td className="px-4 py-2.5 text-muted-foreground/60">
+                  {(t.tokens / 1000).toFixed(1)}K
+                </td>
+                <td className="px-4 py-2.5 text-primary font-semibold">
+                  ${t.cost.toFixed(4)}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }

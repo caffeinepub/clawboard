@@ -478,6 +478,47 @@ function SecurityPanel({
   );
 }
 
+// ── Data Transparency Panel ───────────────────────────────────────────────────
+function DataTransparencyPanel({
+  agents,
+}: {
+  agents: object[];
+}) {
+  if (!agents || agents.length === 0) {
+    return (
+      <SectionEmpty
+        ocid="security.data_transparency.empty_state"
+        message="No agent payloads received yet."
+      />
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      {agents.map((agent: any, i: number) => (
+        <div key={agent.id ?? i} className="space-y-2">
+          <div className="flex items-center gap-2">
+            <span className="text-[10px] font-mono text-primary/70 tracking-wider font-semibold">
+              {agent.name ?? agent.id ?? `Agent ${i + 1}`}
+            </span>
+            <div className="flex-1 h-px bg-border/30" />
+          </div>
+          <pre
+            data-ocid={`security.data_transparency.item.${i + 1}`}
+            className="overflow-y-auto max-h-64 p-3 rounded-sm border border-border/50 bg-background text-[10px] font-mono text-terminal-green/80 leading-relaxed whitespace-pre"
+          >
+            {JSON.stringify(
+              agent,
+              (_k, v) => (typeof v === "bigint" ? v.toString() : v),
+              2,
+            )}
+          </pre>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 // ── Panel heading (shared) ────────────────────────────────────────────────────
 function PanelHeading({ label, sub }: { label: string; sub?: string }) {
   return (
@@ -558,6 +599,22 @@ export function SecuritySection() {
       <section>
         <PanelHeading label="Security Events" sub={`${events.length} total`} />
         <SecurityPanel events={events} agentName={agentName} />
+      </section>
+
+      <div className="relative">
+        <div className="h-px bg-border/40" />
+        <span className="absolute left-1/2 -translate-x-1/2 -translate-y-1/2 px-3 bg-background text-[9px] tracking-widest text-muted-foreground/30 uppercase">
+          Data Transparency
+        </span>
+      </div>
+
+      <section data-ocid="security.data_transparency.panel">
+        <PanelHeading label="Data Transparency" sub="last payload per agent" />
+        <p className="text-[11px] font-mono text-muted-foreground/50 mb-4 leading-relaxed">
+          The exact raw JSON payload last received from each agent. Nothing is
+          hidden or reformatted — this is precisely what was sent.
+        </p>
+        <DataTransparencyPanel agents={agents} />
       </section>
     </div>
   );
