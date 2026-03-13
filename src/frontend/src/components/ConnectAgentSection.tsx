@@ -1,5 +1,12 @@
 import { useQuery } from "@tanstack/react-query";
-import { Check, CheckCircle2, ChevronDown, Copy, Loader2 } from "lucide-react";
+import {
+  Check,
+  CheckCircle2,
+  ChevronDown,
+  Copy,
+  Loader2,
+  Radio,
+} from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import { useEffect, useRef, useState } from "react";
 import { useActor } from "../hooks/useActor";
@@ -72,6 +79,47 @@ const HELP_STEPS = [
     text: "Restart your agent (or wait for auto-reload if it watches for skill changes).",
   },
 ];
+
+// ── Syntax highlighting ────────────────────────────────────────────────────────
+function renderSyntaxHighlighted(content: string) {
+  const lines = content.split("\n");
+  return lines.map((line, lineNum) => {
+    const stableKey = `L${lineNum}`;
+    // YAML delimiters
+    if (line === "---") {
+      return (
+        <span key={stableKey} className="block text-muted-foreground/40">
+          {line}\n
+        </span>
+      );
+    }
+    // YAML key: value pairs (inside front matter)
+    const kvMatch = line.match(/^([\w_]+)(:\s*)(.*)?$/);
+    if (kvMatch && !line.startsWith("#") && !line.startsWith(" ")) {
+      return (
+        <span key={stableKey} className="block">
+          <span className="text-terminal-green">{kvMatch[1]}</span>
+          <span className="text-muted-foreground/50">{kvMatch[2]}</span>
+          <span className="text-foreground/70">{kvMatch[3] ?? ""}\n</span>
+        </span>
+      );
+    }
+    // Comments / headings
+    if (line.startsWith("#")) {
+      return (
+        <span key={stableKey} className="block text-primary/70">
+          {line}\n
+        </span>
+      );
+    }
+    // Default
+    return (
+      <span key={stableKey} className="block text-foreground/75">
+        {line}\n
+      </span>
+    );
+  });
+}
 
 // ── Copy button (Stripe-style) ──────────────────────────────────────────────────
 function CopyButton({ text, ocid }: { text: string; ocid: string }) {
@@ -211,6 +259,10 @@ export function ConnectAgentSection() {
   const generateMutation = useGenerateApiToken();
   const [token, setToken] = useState("");
   const [helpOpen, setHelpOpen] = useState(false);
+  const [testStatus, setTestStatus] = useState<
+    "idle" | "loading" | "ok" | "fail"
+  >("idle");
+  const { actor } = useActor();
   const generateRef = useRef(generateMutation.mutateAsync);
   generateRef.current = generateMutation.mutateAsync;
 
@@ -226,8 +278,25 @@ export function ConnectAgentSection() {
     }
   }, [loadingToken, existingToken]);
 
-  const skillFileContent = token ? buildSkillFile(token) : "";
-  const isLoading = loadingToken || (generateMutation.isPending && !token);
+  const skillFileContent = buildSkillFile(token || "YOUR_API_TOKEN_HERE");
+
+  const handleTestConnection = async () => {
+    setTestStatus("loading");
+    try {
+      if (!actor) {
+        setTestStatus("fail");
+        setTimeout(() => setTestStatus("idle"), 4000);
+        return;
+      }
+      const result = await (actor as any).getAllAgents();
+      const count = Array.isArray(result) ? result.length : 0;
+      setTestStatus(count > 0 ? "ok" : "fail");
+      setTimeout(() => setTestStatus("idle"), 4000);
+    } catch {
+      setTestStatus("fail");
+      setTimeout(() => setTestStatus("idle"), 4000);
+    }
+  };
 
   return (
     <div className="max-w-2xl mx-auto flex flex-col gap-5">
@@ -240,33 +309,45 @@ export function ConnectAgentSection() {
         done.
       </p>
 
-      {/* Code block */}
-      {isLoading ? (
-        <div
-          data-ocid="connect.skill.loading_state"
-          className="flex items-center justify-center gap-2 h-40 rounded-sm border border-border/50 bg-muted/20 text-xs font-mono text-muted-foreground/40"
-        >
+      {/* Code block — always shown immediately */}
+      <div
+        data-ocid="connect.skill.panel"
+        className="relative rounded-sm border border-border/60 bg-muted/30 overflow-hidden"
+      >
+        <div className="absolute top-2.5 right-2.5 z-10">
+          <CopyButton text={skillFileContent} ocid="connect.skill.button" />
+        </div>
+        <div className="flex items-center gap-2 px-3 py-2 border-b border-border/40 bg-muted/40">
+          <span className="text-[10px] font-mono text-muted-foreground/50 tracking-wider">
+            clawboard-reporter.md
+          </span>
+        </div>
+        <pre className="overflow-y-auto max-h-[60vh] p-3 text-[10px] font-mono leading-relaxed whitespace-pre">
+          {renderSyntaxHighlighted(skillFileContent)}
+        </pre>
+      </div>
+
+      {/* Test Connection button */}
+      <button
+        type="button"
+        data-ocid="connect.test.button"
+        onClick={handleTestConnection}
+        disabled={testStatus === "loading"}
+        className="flex items-center gap-2 px-3 py-1.5 rounded-sm border border-border/50 bg-muted/20 text-xs font-mono text-muted-foreground hover:text-foreground hover:border-primary/40 hover:bg-primary/5 transition-all duration-150 w-fit disabled:opacity-50"
+      >
+        {testStatus === "loading" ? (
           <Loader2 className="w-3 h-3 animate-spin" />
-          Building skill file...
-        </div>
-      ) : (
-        <div
-          data-ocid="connect.skill.panel"
-          className="relative rounded-sm border border-border/60 bg-muted/30 overflow-hidden"
-        >
-          <div className="absolute top-2.5 right-2.5 z-10">
-            <CopyButton text={skillFileContent} ocid="connect.skill.button" />
-          </div>
-          <div className="flex items-center gap-2 px-3 py-2 border-b border-border/40 bg-muted/40">
-            <span className="text-[10px] font-mono text-muted-foreground/50 tracking-wider">
-              clawboard-reporter.md
-            </span>
-          </div>
-          <pre className="overflow-y-auto max-h-[50vh] p-3 text-[10px] font-mono text-foreground/60 leading-relaxed whitespace-pre">
-            {skillFileContent}
-          </pre>
-        </div>
-      )}
+        ) : (
+          <Radio className="w-3 h-3" />
+        )}
+        {testStatus === "loading"
+          ? "Checking..."
+          : testStatus === "ok"
+            ? "✓ Ping received"
+            : testStatus === "fail"
+              ? "No ping yet"
+              : "Test Connection"}
+      </button>
 
       {/* Need help? */}
       <div>
@@ -306,6 +387,33 @@ export function ConnectAgentSection() {
                     </p>
                   </div>
                 ))}
+
+                {/* API Reference */}
+                <div className="mt-3 pt-3 border-t border-border/30">
+                  <p className="text-[11px] font-mono text-foreground/60 font-semibold tracking-wider uppercase mb-2">
+                    API Reference
+                  </p>
+                  <p className="text-[11px] font-mono text-muted-foreground/50 mb-2">
+                    POST to{" "}
+                    <code className="text-primary/70">
+                      https://clawboard.app/api/ping
+                    </code>{" "}
+                    — for power users building their own reporter:
+                  </p>
+                  <pre className="text-[10px] font-mono text-muted-foreground/60 bg-muted/30 rounded-sm p-2 overflow-x-auto leading-relaxed">{`{
+  "apiToken": "your-token",
+  "agentId": "unique-agent-id",
+  "agentName": "Agent Name",
+  "status": "active|idle|offline|error",
+  "modelName": "gpt-4o",
+  "logs": ["log line 1"],
+  "errors": [],
+  "identityMd": "...",
+  "soulMd": "...",
+  "memoryMd": "...",
+  "skillsList": ["skill1", "skill2"]
+}`}</pre>
+                </div>
               </div>
             </motion.div>
           )}

@@ -23,6 +23,7 @@ export function useGetAllAgents() {
       return (await actor.getAllAgents()) as unknown as BackendAgent[];
     },
     enabled: !!actor && !isFetching,
+    refetchInterval: 60_000,
   });
 }
 

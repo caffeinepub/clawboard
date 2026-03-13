@@ -2,6 +2,7 @@ import { Toaster } from "@/components/ui/sonner";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import {
   Activity,
+  Bell,
   Bot,
   Brain,
   Clock,
@@ -18,7 +19,7 @@ import {
   Zap,
 } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { toast } from "sonner";
 import { ActivitySection } from "./components/ActivitySection";
 import { AgentsSection } from "./components/AgentsSection";
@@ -29,7 +30,7 @@ import { CreditsSection } from "./components/CreditsSection";
 import { CronSection } from "./components/CronSection";
 import { SecuritySection } from "./components/SecuritySection";
 import { SkillsSection } from "./components/SkillsSection";
-import { useSeedData } from "./hooks/useQueries";
+import { useGetAllAgents, useSeedData } from "./hooks/useQueries";
 import { useTheme } from "./hooks/useTheme";
 
 const queryClient = new QueryClient();
@@ -119,11 +120,46 @@ const SECTION_LABELS: Record<Section, string> = {
   controls: "Controls & Leaderboard",
 };
 
+const STALE_THRESHOLD_MS = 10 * 60 * 1000; // 10 minutes
+
+function formatRelativeTime(ms: number): string {
+  const minutes = Math.floor(ms / 60_000);
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h ago`;
+  return `${Math.floor(hours / 24)}d ago`;
+}
+
 function AppShell() {
   const [active, setActive] = useState<Section>("agents");
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [notifOpen, setNotifOpen] = useState(false);
   const seedMutation = useSeedData();
   const { theme, toggleTheme } = useTheme();
+
+  const { data: agents } = useGetAllAgents();
+
+  const liveAlerts = useMemo(() => {
+    if (!agents || agents.length === 0) return [];
+    const nowMs = Date.now();
+    return agents
+      .filter((agent) => {
+        const lastActiveMs = Number(agent.lastActive) / 1_000_000;
+        return nowMs - lastActiveMs > STALE_THRESHOLD_MS;
+      })
+      .map((agent, idx) => {
+        const lastActiveMs = Number(agent.lastActive) / 1_000_000;
+        const diffMs = nowMs - lastActiveMs;
+        return {
+          id: idx + 1,
+          type: "warning" as "warning" | "error" | "info",
+          text: `Agent ${agent.name} hasn't pinged in ${formatRelativeTime(diffMs)}`,
+          time: formatRelativeTime(diffMs),
+        };
+      });
+  }, [agents]);
+
+  const notifCount = liveAlerts.length;
 
   const handleSeed = async () => {
     try {
@@ -201,6 +237,83 @@ function AppShell() {
             </div>
           </div>
           <div className="flex items-center gap-2">
+            {/* Notifications */}
+            <div className="relative">
+              <button
+                type="button"
+                data-ocid="header.notifications.button"
+                onClick={() => setNotifOpen((v) => !v)}
+                className="relative flex items-center justify-center w-8 h-8 rounded-sm border border-border/50 bg-muted/30 text-muted-foreground hover:text-foreground hover:bg-muted/60 hover:border-border transition-all duration-150"
+              >
+                <Bell className="w-3.5 h-3.5" />
+                {notifCount > 0 && (
+                  <span className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-destructive text-[9px] font-bold text-destructive-foreground flex items-center justify-center">
+                    {notifCount}
+                  </span>
+                )}
+              </button>
+              <AnimatePresence>
+                {notifOpen && (
+                  <motion.div
+                    data-ocid="header.notifications.dropdown_menu"
+                    initial={{ opacity: 0, y: -8, scale: 0.95 }}
+                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                    exit={{ opacity: 0, y: -8, scale: 0.95 }}
+                    transition={{ duration: 0.15 }}
+                    className="absolute right-0 top-10 z-50 w-72 rounded-sm border border-border bg-card shadow-lg overflow-hidden"
+                  >
+                    <div className="px-3 py-2 border-b border-border/50 flex items-center justify-between">
+                      <span className="text-[10px] font-mono font-semibold tracking-widest text-muted-foreground uppercase">
+                        Alerts
+                      </span>
+                      <button
+                        type="button"
+                        data-ocid="header.notifications.close_button"
+                        onClick={() => setNotifOpen(false)}
+                        className="text-muted-foreground/50 hover:text-foreground"
+                      >
+                        <X className="w-3 h-3" />
+                      </button>
+                    </div>
+                    <div className="divide-y divide-border/30">
+                      {liveAlerts.length === 0 ? (
+                        <div className="px-3 py-4 text-center">
+                          <p className="text-[11px] font-mono text-muted-foreground/50">
+                            All agents reporting on time
+                          </p>
+                        </div>
+                      ) : (
+                        liveAlerts.map((alert) => (
+                          <div
+                            key={alert.id}
+                            className="px-3 py-2.5 flex items-start gap-2.5 hover:bg-muted/20 transition-colors"
+                          >
+                            <span
+                              className={`mt-0.5 w-1.5 h-1.5 rounded-full shrink-0 ${
+                                alert.type === "error"
+                                  ? "bg-destructive"
+                                  : alert.type === "warning"
+                                    ? "bg-terminal-amber"
+                                    : "bg-primary"
+                              }`}
+                            />
+                            <div className="flex-1 min-w-0">
+                              <p className="text-[11px] font-mono text-foreground/80 leading-snug">
+                                {alert.text}
+                              </p>
+                              <p className="text-[10px] font-mono text-muted-foreground/40 mt-0.5">
+                                {alert.time}
+                              </p>
+                            </div>
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </div>
+
             {/* Theme toggle */}
             <button
               type="button"
@@ -257,7 +370,7 @@ function AppShell() {
               exit={{ opacity: 0, y: -8 }}
               transition={{ duration: 0.2 }}
             >
-              {active === "agents" && <AgentsSection />}
+              {active === "agents" && <AgentsSection setActive={setActive} />}
               {active === "brain" && <BrainSection />}
               {active === "skills" && <SkillsSection />}
               {active === "cron" && <CronSection />}
@@ -374,15 +487,19 @@ function SidebarContent({
         })}
       </nav>
 
+      {/* Footer — backend status */}
       <div className="px-4 py-3 border-t border-sidebar-border/50">
         <div className="text-[9px] text-muted-foreground/25 tracking-widest space-y-0.5">
-          <div className="flex justify-between">
-            <span>NODE</span>
-            <span className="text-primary/40">ICP-MAINNET</span>
+          <div className="flex items-center justify-between">
+            <span>BACKEND</span>
+            <span className="flex items-center gap-1">
+              <span className="w-1.5 h-1.5 rounded-full bg-terminal-green animate-pulse-slow" />
+              <span className="text-terminal-green/60">CONNECTED</span>
+            </span>
           </div>
           <div className="flex justify-between">
-            <span>CANISTER</span>
-            <span className="text-accent/40">OPENCLAW</span>
+            <span>SERVER</span>
+            <span className="text-primary/40">clawboard.app</span>
           </div>
         </div>
       </div>

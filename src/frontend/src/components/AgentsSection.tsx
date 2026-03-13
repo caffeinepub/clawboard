@@ -1,10 +1,25 @@
-import { Bot, Loader2, ServerCrash } from "lucide-react";
+import { Bot, Loader2, Plug, ServerCrash } from "lucide-react";
 import { motion } from "motion/react";
 import type { Agent as BackendAgent } from "../backend";
 import { useGetAllAgents } from "../hooks/useQueries";
 import { AgentCard } from "./AgentCard";
 
-export function AgentsSection() {
+interface AgentsSectionProps {
+  setActive: (
+    s:
+      | "agents"
+      | "brain"
+      | "skills"
+      | "cron"
+      | "credits"
+      | "activity"
+      | "security"
+      | "connect"
+      | "controls",
+  ) => void;
+}
+
+export function AgentsSection({ setActive }: AgentsSectionProps) {
   const { data, isLoading, isError } = useGetAllAgents();
   const agents: BackendAgent[] = data ?? [];
 
@@ -51,18 +66,29 @@ export function AgentsSection() {
     return (
       <div
         data-ocid="agents.empty_state"
-        className="flex flex-col items-center justify-center gap-4 py-24"
+        className="flex flex-col items-center justify-center gap-5 py-24"
       >
         <div className="relative">
-          <Bot className="w-12 h-12 text-muted-foreground/30" />
+          <Bot className="w-14 h-14 text-muted-foreground/20" />
           <div className="absolute inset-0 rounded-full border border-primary/20 animate-ping" />
         </div>
-        <p className="text-sm text-muted-foreground/60 tracking-wide">
-          No agents online.
-        </p>
-        <p className="text-xs text-muted-foreground/40 tracking-widest uppercase">
-          Click &ldquo;Seed Data&rdquo; to initialize the system
-        </p>
+        <div className="text-center space-y-2">
+          <p className="text-sm font-mono font-semibold text-foreground/70 tracking-wide">
+            No agents connected yet
+          </p>
+          <p className="text-xs font-mono text-muted-foreground/50">
+            Add the ClawBoard skill to your agent to get started
+          </p>
+        </div>
+        <button
+          type="button"
+          data-ocid="agents.connect.button"
+          onClick={() => setActive("connect")}
+          className="flex items-center gap-2 px-4 py-2 rounded-sm border border-primary/30 bg-primary/10 text-primary text-xs font-mono tracking-wide hover:bg-primary/20 hover:border-primary/50 transition-all duration-150"
+        >
+          <Plug className="w-3.5 h-3.5" />
+          Go to Connect Agent
+        </button>
       </div>
     );
   }

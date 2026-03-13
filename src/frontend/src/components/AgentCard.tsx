@@ -1,3 +1,4 @@
+import { ExternalLink } from "lucide-react";
 import { motion } from "motion/react";
 import type { Agent as BackendAgent } from "../backend";
 
@@ -20,13 +21,21 @@ type StatusKey = "active" | "idle" | "error" | "offline";
 
 const STATUS_CONFIG: Record<
   StatusKey,
-  { label: string; color: string; glow: string; dot: string; border: string }
+  {
+    label: string;
+    color: string;
+    glow: string;
+    dot: string;
+    pingColor: string;
+    border: string;
+  }
 > = {
   active: {
     label: "ACTIVE",
     color: "text-terminal-green",
     glow: "shadow-glow-green",
-    dot: "bg-terminal-green animate-pulse-slow",
+    dot: "bg-terminal-green",
+    pingColor: "bg-terminal-green",
     border: "border-terminal-green/30",
   },
   idle: {
@@ -34,13 +43,15 @@ const STATUS_CONFIG: Record<
     color: "text-terminal-amber",
     glow: "shadow-glow-amber",
     dot: "bg-terminal-amber",
+    pingColor: "",
     border: "border-terminal-amber/30",
   },
   error: {
     label: "ERROR",
     color: "text-terminal-red",
     glow: "shadow-glow-red",
-    dot: "bg-terminal-red animate-pulse",
+    dot: "bg-terminal-red",
+    pingColor: "bg-terminal-red",
     border: "border-terminal-red/30",
   },
   offline: {
@@ -48,6 +59,7 @@ const STATUS_CONFIG: Record<
     color: "text-terminal-gray",
     glow: "",
     dot: "bg-terminal-gray",
+    pingColor: "",
     border: "border-terminal-gray/20",
   },
 };
@@ -55,6 +67,7 @@ const STATUS_CONFIG: Record<
 export function AgentCard({ agent, index }: AgentCardProps) {
   const statusKey = agent.status as string as StatusKey;
   const cfg = STATUS_CONFIG[statusKey] ?? STATUS_CONFIG.offline;
+  const showPing = statusKey === "active" || statusKey === "error";
 
   return (
     <motion.div
@@ -93,9 +106,15 @@ export function AgentCard({ agent, index }: AgentCardProps) {
         <div
           className={`flex items-center gap-1.5 shrink-0 px-2 py-0.5 rounded-sm border ${cfg.border} bg-background/40`}
         >
-          <span
-            className={`inline-block w-1.5 h-1.5 rounded-full ${cfg.dot}`}
-          />
+          {/* Pulsing status dot with ping ring */}
+          <div className="relative shrink-0">
+            <span className={`inline-block w-2 h-2 rounded-full ${cfg.dot}`} />
+            {showPing && (
+              <span
+                className={`absolute inset-0 w-2 h-2 rounded-full ${cfg.pingColor} animate-ping opacity-50`}
+              />
+            )}
+          </div>
           <span
             className={`text-[10px] font-bold tracking-widest ${cfg.color}`}
           >
@@ -104,6 +123,18 @@ export function AgentCard({ agent, index }: AgentCardProps) {
         </div>
       </div>
 
+      {/* Provider badge */}
+      {agent.modelName && (
+        <div className="flex items-center gap-1.5">
+          <span className="text-[9px] tracking-widest text-muted-foreground/40 uppercase">
+            Provider
+          </span>
+          <span className="px-1.5 py-0.5 rounded-sm bg-primary/8 border border-primary/15 text-primary/80 text-[10px] font-mono truncate max-w-[120px]">
+            {agent.modelName}
+          </span>
+        </div>
+      )}
+
       {/* Divider */}
       <div
         className={`h-px w-full bg-gradient-to-r from-transparent via-current to-transparent ${cfg.color} opacity-20`}
@@ -111,17 +142,14 @@ export function AgentCard({ agent, index }: AgentCardProps) {
 
       {/* Stats grid */}
       <div className="grid grid-cols-2 gap-x-4 gap-y-2">
-        <Stat label="MODEL" value={agent.modelName} mono />
         <Stat label="TASKS" value={agent.taskCount.toString()} accent />
         <Stat
           label="UPTIME"
           value={`${agent.uptimePercentage.toString()}%`}
           accent
         />
-        <Stat
-          label="LAST ACTIVE"
-          value={formatRelativeTime(agent.lastActive)}
-        />
+        <Stat label="LAST PING" value={formatRelativeTime(agent.lastActive)} />
+        <Stat label="MODEL" value={agent.modelName} mono />
       </div>
 
       {/* Uptime bar */}
@@ -151,6 +179,16 @@ export function AgentCard({ agent, index }: AgentCardProps) {
           />
         </div>
       </div>
+
+      {/* View Details button */}
+      <button
+        type="button"
+        data-ocid={`agents.view.button.${index}`}
+        className="w-full mt-1 flex items-center justify-center gap-1.5 px-2 py-1.5 rounded-sm border border-border/40 bg-background/40 text-[10px] font-mono text-muted-foreground hover:text-foreground hover:border-primary/30 hover:bg-primary/5 transition-all duration-150 tracking-wide"
+      >
+        <ExternalLink className="w-3 h-3" />
+        VIEW DETAILS
+      </button>
     </motion.div>
   );
 }
